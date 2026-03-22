@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block stylesheets %}
+{{ super() }}
+<link rel="stylesheet" type="text/css" href="/team-manager/assets/leave_team.css">
+{% endblock %}
+
+{% block content %}
+
+<div class="jumbotron">
+  <div class="container">
+    <h1>{% trans %}Team Management{% endtrans %}</h1>
+  </div>
+</div>
+
+<div class="container pb-5">
+
+  {% include "components/errors.html" %}
+
+  {# Team info #}
+  <div class="row justify-content-center mb-4">
+    <div class="col-lg-10 col-xl-8">
+      <div class="lt-card p-3 d-flex align-items-center gap-3 flex-wrap">
+        <div class="flex-grow-1">
+          <div class="text-muted small mb-1">{% trans %}Your team{% endtrans %}</div>
+          <h3 class="mb-0 lt-card-title">
+            <i class="fas fa-shield-alt me-2 text-secondary"></i>{{ team.name | e }}
+          </h3>
+        </div>
+        <div>
+          {% if is_captain %}
+          <span class="badge-captain">
+            <i class="fas fa-crown me-1"></i>{% trans %}Captain{% endtrans %}
+          </span>
+          {% else %}
+          <span class="badge bg-secondary">
+            <i class="fas fa-user me-1"></i>{% trans %}Member{% endtrans %}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Main row: Manage members + Leave (side by side on desktop) #}
+  <div class="row justify-content-center mb-4 g-3">
+
+    {# Manage members (captain + other members) #}
+    {% if is_captain and has_other_members %}
+    <div class="col-md-6 col-lg-5 col-xl-4">
+      <div class="lt-card p-3 h-100">
+        <h5 class="lt-card-title mb-3">
+          <i class="fas fa-users-cog me-2 text-secondary"></i>
+          {% trans %}Manage members{% endtrans %}
+        </h5>
+        <p class="text-muted small mb-3">
+          {% trans %}Kick a member. Their submissions and solves will be deleted.{% endtrans %}
+        </p>
+        <div>
+          {% for member in other_members %}
+          <div class="lt-member-row d-flex justify-content-between align-items-center py-2 px-1">
+            <span class="text-truncate me-2" style="max-width:160px;" title="{{ member.name | e }}">
+              <i class="fas fa-user me-2 text-muted"></i>{{ member.name | e }}
+            </span>
+            <form method="POST" action="/teams/kick-member"
+                  onsubmit="return confirmKick({{ member.name | tojson }})">
+              <input type="hidden" name="nonce" value="{{ Session.nonce }}">
+              <input type="hidden" name="member_id" value="{{ member.id | int }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger flex-shrink-0">
+                <i class="fas fa-user-minus me-1"></i>{% trans %}Kick{% endtrans %}
+              </button>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# Leave team #}
+    <div class="{% if is_captain and has_other_members %}col-md-6 col-lg-5 col-xl-4{% else %}col-md-8 col-lg-6 col-xl-5{% endif %}">
+      <div class="lt-card-danger p-3 h-100">
+        <h5 class="text-danger mb-3">
+          <i class="fas fa-door-open me-2"></i>{% trans %}Leave the team{% endtrans %}
+        </h5>
+        <ul class="mb-3 small" style="color: var(--bs-secondary-color);">
+          <li class="text-warning">{% trans %}All your submissions and solves will be deleted.{% endtrans %}</li>
+          <li>{% trans %}Your score will be reset to zero.{% endtrans %}</li>
+          {% if not has_other_members %}
+          <li class="text-warning">{% trans %}You are the last member — the team will be disbanded.{% endtrans %}</li>
+          {% endif %}
+        </ul>
+        <form method="POST" action="/teams/leave">
+          <input type="hidden" name="nonce" value="{{ Session.nonce }}">
+          {% if is_captain and has_other_members %}
+          <div class="mb-3">
+            <label class="form-label text-warning fw-bold small">
+              <i class="fas fa-crown me-1"></i>{% trans %}Choose your successor{% endtrans %}
+            </label>
+            <select name="new_captain_id" class="form-select form-select-sm lt-select" required>
+              <option value="" disabled selected>— {% trans %}Select a member{% endtrans %} —</option>
+              {% for member in other_members %}
+              <option value="{{ member.id | int }}">{{ member.name | e }}</option>
+              {% endfor %}
+            </select>
+            {% if captain_error %}
+            <div class="lt-alert-danger mt-2">
+              <i class="fas fa-exclamation-circle me-1"></i>{{ captain_error | e }}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-danger btn-sm">
+              <i class="fas fa-sign-out-alt me-1"></i>{% trans %}Confirm and leave{% endtrans %}
+            </button>
+            <a href="/teams/me" class="btn btn-sm" style="border: 1px solid var(--bs-border-color); color: var(--bs-body-color);">
+              <i class="fas fa-arrow-left me-1"></i>{% trans %}Cancel{% endtrans %}
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>{# end main row #}
+
+  {# Danger zone (captain only, collapse) #}
+  {% if is_captain %}
+  <div class="row justify-content-center">
+    <div class="col-lg-10 col-xl-8">
+
+      <button
+        class="btn btn-danger-toggle w-100 mb-2 py-2"
+        type="button"
+        data-bs-toggle="collapse"
+        data-bs-target="#danger-zone"
+        aria-expanded="false"
+        aria-controls="danger-zone"
+      >
+        <i class="fas fa-skull-crossbones me-2"></i>
+        {% trans %}Danger Zone — Disband the team{% endtrans %}
+        <i class="fas fa-chevron-down ms-2" id="danger-chevron"></i>
+      </button>
+
+      <div class="collapse" id="danger-zone">
+        <div class="lt-card-dissolve p-3 mb-2">
+          <h5 class="mb-3" style="color:#ff1744;">
+            <i class="fas fa-bomb me-2"></i>{% trans %}Permanently disband the team{% endtrans %}
+          </h5>
+          <div class="lt-alert-danger mb-3" style="border-color: #ff1744; color: #ff1744;">
+            <strong>{% trans %}This action is irreversible.{% endtrans %}</strong>
+            {% trans %}The team will be deleted and all members removed immediately.{% endtrans %}
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <div class="text-danger small"><i class="fas fa-times me-1"></i>{% trans %}All solves from all members will be deleted{% endtrans %}</div>
+              <div class="text-danger small"><i class="fas fa-times me-1"></i>{% trans %}All members' scores will be reset to zero{% endtrans %}</div>
+            </div>
+            <div class="col-md-6">
+              <div class="text-danger small"><i class="fas fa-times me-1"></i>{% trans %}The team will be removed from the leaderboard{% endtrans %}</div>
+              <div class="text-danger small"><i class="fas fa-times me-1"></i>{% trans %}All members will need to join a new team{% endtrans %}</div>
+            </div>
+          </div>
+          <form method="POST" action="/teams/dissolve">
+            <input type="hidden" name="nonce" value="{{ Session.nonce }}">
+            <div class="mb-3">
+              <label class="form-label text-danger fw-bold small" for="confirm_name">
+                {% trans %}Confirm by typing the team name:{% endtrans %}
+                <strong class="lt-card-title">{{ team.name | e }}</strong>
+              </label>
+              <input
+                type="text"
+                id="confirm_name"
+                name="confirm_name"
+                class="form-control form-control-sm lt-input"
+                placeholder="{{ team.name | e }}"
+                autocomplete="off"
+                oninput="checkDissolve(this)"
+              >
+            </div>
+            <button type="submit" id="dissolve-btn" class="btn btn-danger btn-sm" disabled>
+              <i class="fas fa-bomb me-1"></i>{% trans %}Permanently disband the team{% endtrans %}
+            </button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+const TEAM_NAME = {{ team.name | tojson }};
+
+function confirmKick(memberName) {
+  return confirm('Kick "' + memberName + '"? Their solves will be deleted.');
+}
+
+function checkDissolve(input) {
+  document.getElementById('dissolve-btn').disabled = (input.value !== TEAM_NAME);
+}
+
+const dz = document.getElementById('danger-zone');
+if (dz) {
+  dz.addEventListener('show.bs.collapse', () => {
+    document.getElementById('danger-chevron').classList.replace('fa-chevron-down', 'fa-chevron-up');
+  });
+  dz.addEventListener('hide.bs.collapse', () => {
+    document.getElementById('danger-chevron').classList.replace('fa-chevron-up', 'fa-chevron-down');
+  });
+}
+</script>
+{% endblock %}

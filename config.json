@@ -1,0 +1,6 @@
+{
+  "name": "ctfd-team-manager",
+  "version": "1.0.0",
+  "description": "Allows players to leave, kick members from, or disband their team autonomously, without admin intervention.",
+  "author": "Association Hack'olyte - hackolyte.fr"
+}
