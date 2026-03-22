@@ -21,6 +21,7 @@ By default, CTFd does not allow players to leave a team or kick members without 
 ## Screens
 <img width="1202" height="666" alt="team2" src="https://github.com/user-attachments/assets/7869f119-3f52-40c4-a2cf-d3894e4ce118" />
 <img width="1050" height="761" alt="team1" src="https://github.com/user-attachments/assets/c48b5608-7bbc-4d81-890f-447373195ff0" />
+<img width="1216" height="599" alt="team3" src="https://github.com/user-attachments/assets/41b3a0b3-da0f-474b-952c-8dd742f7b115" />
 
 
 ## How it works
