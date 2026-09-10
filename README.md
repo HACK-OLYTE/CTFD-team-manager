@@ -34,6 +34,31 @@ By default, CTFd does not allow players to leave a team or kick members without 
 
 All actions require the user to be authenticated and have a verified email. Admin and plugin routes are never affected.
 
+### Attempt counters
+
+Leaving a team, or being kicked from one, deletes the member's **solves** so the
+team score stays honest. Their **incorrect submissions are kept on purpose**:
+CTFd derives `max_attempts` from the number of `Fails` rows recorded against the
+account, so deleting them would let a player refill the team's attempt budget by
+leaving and rejoining.
+
+### Team deletion during the CTF
+
+Disbanding a team, or leaving it as its last member, deletes the team row and all
+of its submissions cascade with it. The players could then re-form under a fresh
+account and start from a clean attempt budget, so both operations are **refused
+while the CTF is running**.
+
+Admins who accept that trade-off can lift the restriction with the
+`team_manager:allow_team_deletion_during_ctf` config key:
+
+```python
+from CTFd.utils import set_config
+set_config("team_manager:allow_team_deletion_during_ctf", True)
+```
+
+Outside CTF time, both operations behave as before with no configuration needed.
+
 ## Installation
 
 Copy the `ctfd-team-manager` folder into your CTFd `plugins/` directory:

@@ -84,10 +84,14 @@
           <i class="fas fa-door-open me-2"></i>{% trans %}Leave the team{% endtrans %}
         </h5>
         <ul class="mb-3 small" style="color: var(--bs-secondary-color);">
-          <li class="text-warning">{% trans %}All your submissions and solves will be deleted.{% endtrans %}</li>
+          <li class="text-warning">{% trans %}All your solves will be deleted.{% endtrans %}</li>
           <li>{% trans %}Your score will be reset to zero.{% endtrans %}</li>
+          <li>{% trans %}Your failed attempts are kept: leaving does not give the team new attempts.{% endtrans %}</li>
           {% if not has_other_members %}
           <li class="text-warning">{% trans %}You are the last member — the team will be disbanded.{% endtrans %}</li>
+          {% if not can_delete_team %}
+          <li class="text-danger">{% trans %}Disbanding is disabled while the CTF is running, so you cannot leave right now.{% endtrans %}</li>
+          {% endif %}
           {% endif %}
         </ul>
         <form method="POST" action="/teams/leave">
@@ -124,8 +128,8 @@
 
   </div>{# end main row #}
 
-  {# Danger zone (captain only, collapse) #}
-  {% if is_captain %}
+  {# Danger zone (captain only, collapse) — hidden while team deletion is locked #}
+  {% if is_captain and can_delete_team %}
   <div class="row justify-content-center">
     <div class="col-lg-10 col-xl-8">
 
@@ -202,7 +206,10 @@ function confirmKick(memberName) {
 }
 
 function checkDissolve(input) {
-  document.getElementById('dissolve-btn').disabled = (input.value !== TEAM_NAME);
+  const btn = document.getElementById('dissolve-btn');
+  if (btn) {
+    btn.disabled = (input.value !== TEAM_NAME);
+  }
 }
 
 const dz = document.getElementById('danger-zone');

@@ -6,9 +6,46 @@ from CTFd.cache import clear_standings, clear_team_session, clear_user_session
 from CTFd.models import Submissions, Users, db
 from CTFd.plugins import register_plugin_script
 from CTFd.utils import config as ctfd_config
+from CTFd.utils import get_config
+from CTFd.utils.dates import ctftime
 from CTFd.utils.decorators import authed_only, require_verified_emails
 from CTFd.utils.helpers import error_for, get_errors, get_infos
 from CTFd.utils.user import get_current_team, get_current_user
+
+# Admins can lift the in-CTF lock on team deletion by setting this config key.
+ALLOW_TEAM_DELETION_KEY = "team_manager:allow_team_deletion_during_ctf"
+
+
+def _delete_member_solves(user_id):
+    """Delete a member's solves while keeping their incorrect submissions.
+
+    Dropping the solves keeps the team score honest once the member is gone.
+    The Fails rows must stay: CTFd derives max_attempts from
+    Fails.filter_by(account_id=..., challenge_id=...).count()
+    (CTFd/api/v1/challenges.py), so deleting them refills the team's attempt
+    budget and turns leave/rejoin into an unlimited brute-force primitive.
+
+    Deleting the parent Submissions rows cascades to `solves` through the
+    ON DELETE CASCADE on solves.id.
+    """
+    Submissions.query.filter(
+        Submissions.user_id == user_id,
+        Submissions.type == "correct",
+    ).delete(synchronize_session=False)
+
+
+def team_deletion_locked():
+    """True when destroying a team is refused.
+
+    Disbanding a team, or leaving it as its last member, deletes the Teams row.
+    Submissions cascade with it, incorrect ones included, and the players then
+    re-form under a fresh account_id with an empty attempt budget. Preserving
+    Fails is not enough to stop that, so the destructive paths are closed while
+    the CTF is running unless an admin opts out.
+    """
+    if get_config(ALLOW_TEAM_DELETION_KEY):
+        return False
+    return ctftime()
 
 
 def load(app):
@@ -47,6 +84,16 @@ def _register_routes(app):
         errors = get_errors()
 
         if request.method == "POST":
+            # Leaving as the last member deletes the team; refuse during the CTF
+            if not has_other_members and team_deletion_locked():
+                error_for(
+                    "team_manager.leave_team",
+                    "You are the last member: leaving would disband the team, "
+                    "which is not allowed while the CTF is running. Contact an "
+                    "administrator.",
+                )
+                return redirect(url_for("team_manager.leave_team"))
+
             # Validate successor if captain
             captain_error = ""
             new_captain_id = None
@@ -66,6 +113,7 @@ def _register_routes(app):
                     team=team, other_members=other_members,
                     is_captain=is_captain, has_other_members=has_other_members,
                     captain_error=captain_error,
+                    can_delete_team=not team_deletion_locked(),
                     infos=infos, errors=errors,
                 )
 
@@ -73,8 +121,8 @@ def _register_routes(app):
                 user_id = user.id
                 team_id = team.id
 
-                # Standard CTFd behavior: delete all submissions
-                Submissions.query.filter_by(user_id=user_id).delete()
+                # Drop the solves, keep the fails (see _delete_member_solves)
+                _delete_member_solves(user_id)
 
                 # Transfer captaincy
                 if is_captain and has_other_members and new_captain_id:
@@ -103,6 +151,7 @@ def _register_routes(app):
             team=team, other_members=other_members,
             is_captain=is_captain, has_other_members=has_other_members,
             captain_error="",
+            can_delete_team=not team_deletion_locked(),
             infos=infos, errors=errors,
         )
 
@@ -137,8 +186,8 @@ def _register_routes(app):
         target = Users.query.filter_by(id=member_id).first_or_404()
 
         try:
-            # Standard CTFd behavior: delete all submissions for the member
-            Submissions.query.filter_by(user_id=member_id).delete()
+            # Drop the solves, keep the fails (see _delete_member_solves)
+            _delete_member_solves(member_id)
             team.members.remove(target)
             db.session.commit()
 
@@ -170,6 +219,14 @@ def _register_routes(app):
             error_for("team_manager.leave_team", "Only the captain can disband the team.")
             return redirect(url_for("team_manager.leave_team"))
 
+        if team_deletion_locked():
+            error_for(
+                "team_manager.leave_team",
+                "Disbanding a team is not allowed while the CTF is running. "
+                "Contact an administrator.",
+            )
+            return redirect(url_for("team_manager.leave_team"))
+
         typed_name = request.form.get("confirm_name", "").strip()
         if typed_name != team.name:
             error_for("team_manager.leave_team", "Team name does not match. Disbanding cancelled.")
@@ -179,9 +236,11 @@ def _register_routes(app):
             team_id = team.id
             all_member_ids = [m.id for m in team.members]
 
-            # Standard CTFd behavior: delete all submissions for all members
+            # Drop the solves, keep the fails (see _delete_member_solves).
+            # Deleting the team below cascades the rest anyway, which is why
+            # this path is gated by team_deletion_locked().
             for member_id in all_member_ids:
-                Submissions.query.filter_by(user_id=member_id).delete()
+                _delete_member_solves(member_id)
 
             team.members = []
             db.session.delete(team)
